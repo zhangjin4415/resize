@@ -836,13 +836,14 @@ template<typename ST, typename DT> struct Cast
     DT operator()(ST val) const { return saturate_cast<DT>(val); }
 };
 
-template<typename ST, typename DT, int bits> struct FixedPtCast/////////////////////////////////////////////////////zjin8
+template<typename ST, typename DT, int bits> struct FixedPtCast/////////////////////////////////////////////////////zjin7
 {
     typedef ST type1;
     typedef DT rtype;
     enum { SHIFT = bits, DELTA = 1 << (bits-1) };
 
     DT operator()(ST val) const { 
+        std::cout<<((val + DELTA)>>SHIFT)<<std::endl;////////////////////////////////////////////   ---------------------------------------   get 末尾 out
         return saturate_cast<DT>((val + DELTA)>>SHIFT); 
         }
 };
@@ -1241,7 +1242,7 @@ struct VResizeCubicVec_32s8u
 {
     int operator()(const uchar** _src, uchar* dst, const uchar* _beta, int width ) const
     {
-        // std::cout<<"VResizeCubicVec_32s8u..."<<std::endl;/////////////////////////////////////////////////////// zjin7
+        // std::cout<<"VResizeCubicVec_32s8u..."<<std::endl;/////////////////////////////////////  VResizeCubicVec_32s8u ////////////////// zjin6
         if( !checkHardwareSupport(CV_CPU_SSE2) )
             return 0;
 
@@ -1253,7 +1254,8 @@ struct VResizeCubicVec_32s8u
         __m128 b0 = _mm_set1_ps(beta[0]*scale), b1 = _mm_set1_ps(beta[1]*scale),
             b2 = _mm_set1_ps(beta[2]*scale), b3 = _mm_set1_ps(beta[3]*scale);
 
-        if( (((size_t)S0|(size_t)S1|(size_t)S2|(size_t)S3)&15) == 0 )
+        if( (((size_t)S0|(size_t)S1|(size_t)S2|(size_t)S3)&15) == 0 ){
+            std::cout<<"if......"<<std::endl;////////////////////////////////////////////////
             for( ; x <= width - 8; x += 8 )
             {
                 __m128i x0, x1, y0, y1;
@@ -1288,9 +1290,27 @@ struct VResizeCubicVec_32s8u
                 x1 = _mm_cvtps_epi32(s1);
 
                 x0 = _mm_packs_epi32(x0, x1);
+
+                
+                uint16_t *val = (uint16_t*) &x0;
+                printf("Numerical: %i %i %i %i %i %i %i %i \n", //////////////////////////////////////////////////  get out 8 个结果
+                    val[0], val[1], val[2], val[3], val[4], val[5], 
+                    val[6], val[7]);
+
+                int32_t  *q = (int32_t*)&x0 ;/////////////
+                std::cout<<q[0]<<std::endl;/////////////////
+                
                 _mm_storel_epi64( (__m128i*)(dst + x), _mm_packus_epi16(x0, x0));
+
+
+                int32_t  *p = (int*)((__m128i*)(dst + x)) ;/////////////
+                std::cout<<p[0]<<std::endl;/////////////////
+                std::cout<<"x0....."<<x<<std::endl;/////////////////////////////////////////////////////////////////////
             }
-        else
+            
+        }
+        else{
+            std::cout<<"else......"<<std::endl;///////////////////////////////////////////
             for( ; x <= width - 8; x += 8 )
             {
                 __m128i x0, x1, y0, y1;
@@ -1325,9 +1345,14 @@ struct VResizeCubicVec_32s8u
                 x1 = _mm_cvtps_epi32(s1);
 
                 x0 = _mm_packs_epi32(x0, x1);
+
+                // std::cout<<"x0....."<<int(x0)<<std::endl;/////////////////////////////////////////////////////////////////////
                 _mm_storel_epi64( (__m128i*)(dst + x), _mm_packus_epi16(x0, x0));
+
+                std::cout<<"x0....."<<*(long long *)((__m128i*)(dst + x))<<std::endl;/////////////////////////////////////////////////////////////////////
             }
-        // std::cout<<"x....."<<dst[0]<<std::endl;///////////////////////////////////////////////////////////
+        }
+        std::cout<<"x....."<<x<<std::endl;///////////////////////////////////////////////////////////
         return x;
     }
 };
@@ -2098,12 +2123,14 @@ struct VResizeCubic
         VecOp vecOp;
 
         int x = vecOp((const uchar**)src, (uchar*)dst, (const uchar*)beta, width);
+        std::cout<<"x:"<<x<<std::endl;///////////////////////////////////////////////////////// 48
         for( ; x < width; x++ )
             dst[x] = castOp(S0[x]*b0 + S1[x]*b1 + S2[x]*b2 + S3[x]*b3);
             // std::cout<<x<<std::endl;//////////////////////////////////////////////////////////////////////////////
             // std::cout<<"dst[x]:"<<dst[x]<<std::endl;
+
     
-        std::cout<<"VResizeCubic---------------------------------"<<std::endl;//////////////////////////////////////////50 ge zjin
+        std::cout<<"VResizeCubic--------------------------------------------"<<std::endl;//////////////////////////////////////////50 ge zjin
         // x = vecOp((const uchar**)src, (uchar*)dst, (const uchar*)beta, width);
         // for( ; x < width; x++ )
         //     std::cout<<x<<std::endl;
