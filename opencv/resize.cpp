@@ -836,14 +836,15 @@ template<typename ST, typename DT> struct Cast
     DT operator()(ST val) const { return saturate_cast<DT>(val); }
 };
 
-template<typename ST, typename DT, int bits> struct FixedPtCast/////////////////////////////////////////////////////zjin7
+template<typename ST, typename DT, int bits> struct FixedPtCast/////////////////////////////////////////////////////zjin8
 {
     typedef ST type1;
     typedef DT rtype;
     enum { SHIFT = bits, DELTA = 1 << (bits-1) };
 
     DT operator()(ST val) const { 
-        std::cout<<((val + DELTA)>>SHIFT)<<std::endl;////////////////////////////////////////////   ---------------------------------------   get 末尾 out
+
+        // DELTA<<"----------"<<SHIFT<<std::endl;////////////////////////////////////////////   ---------------------------------------   getout 末尾 
         return saturate_cast<DT>((val + DELTA)>>SHIFT); 
         }
 };
@@ -1240,35 +1241,69 @@ struct VResizeLinearVec_32f
 
 struct VResizeCubicVec_32s8u
 {
-    int operator()(const uchar** _src, uchar* dst, const uchar* _beta, int width ) const
+    int operator()(const uchar** _src, uchar* dst, const uchar* _beta, int width ) const /////////// ??? src  经过 hresize 操作的 dst
     {
-        // std::cout<<"VResizeCubicVec_32s8u..."<<std::endl;/////////////////////////////////////  VResizeCubicVec_32s8u ////////////////// zjin6
+        //
+       
+
+        /////////////////////////////////////  VResizeCubicVec_32s8u ////////////////// zjin7
         if( !checkHardwareSupport(CV_CPU_SSE2) )
             return 0;
 
-        const int** src = (const int**)_src;
+        const int** src = (const int**)_src;/// src[0], src[1], src[2], src[3] 四个值
         const short* beta = (const short*)_beta;
+
+        //  beta[0]<<" "<<beta[1]<<" "<<beta[2]<<" "<<beta[3]<< "  beat  width:"<< width <<std::endl; //-92 641 1723 -225  beat  width:50   -151 1976 246 -23  beat  width:50 ...
+
+
         const int *S0 = src[0], *S1 = src[1], *S2 = src[2], *S3 = src[3];
+
+        // __m128i s0_bbb = _mm_cvtps_epi32(_mm_load_si128((const __m128i*)S0));/////////////
+        // int16_t *val = (int16_t*) &s0_bbb;
+        // printf("S0: %i %i %i %i %i %i %i %i \n", ///
+        //             val[0], val[1], val[2], val[3], val[4], val[5], 
+                    // val[6], val[7]);
+
         int x = 0;
+
+
         float scale = 1.f/(INTER_RESIZE_COEF_SCALE*INTER_RESIZE_COEF_SCALE);
-        __m128 b0 = _mm_set1_ps(beta[0]*scale), b1 = _mm_set1_ps(beta[1]*scale),
+        //// INTER_RESIZE_COEF_SCALE 2048
+
+// load系列，用于加载数据，从内存到暂存器
+//_mm_load1_ps表示将p地址的值，加载到暂存器的四个字节，需要多条指令完成，所以，从性能考虑，在内层循环不要使用这类指令。（r0 := r1 := r2 := r3 := *p）。
+// _mm_set1_ps  与 _mm_load1_ps相对应
+        __m128 b0 = _mm_set1_ps(beta[0]*scale), b1 = _mm_set1_ps(beta[1]*scale),////////////////////////   * scale 
             b2 = _mm_set1_ps(beta[2]*scale), b3 = _mm_set1_ps(beta[3]*scale);
 
         if( (((size_t)S0|(size_t)S1|(size_t)S2|(size_t)S3)&15) == 0 ){
-            std::cout<<"if......"<<std::endl;////////////////////////////////////////////////
-            for( ; x <= width - 8; x += 8 )
+            //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+            for( ; x <= width - 8; x += 8 ) /////////////////////// ------ -------------------   每次走8个值 走6次 得到dst[0] - [47]
             {
+                //__m128 ----  包装float
+                // _m128i类型的变量被自动分配为16个字节的字长。?? int
                 __m128i x0, x1, y0, y1;
                 __m128 s0, s1, f0, f1;
+
+                ///返回为一个__m128i的寄存器，它将_P指向的数据读到指定寄存器中，实际使用时，
+                //_P一般是通过类型转换得到的, Address _P must be 16-byte aligned
+                // extern __m128i _mm_load_si128(__m128i const*_P);
                 x0 = _mm_load_si128((const __m128i*)(S0 + x));
                 x1 = _mm_load_si128((const __m128i*)(S0 + x + 4));
                 y0 = _mm_load_si128((const __m128i*)(S1 + x));
                 y1 = _mm_load_si128((const __m128i*)(S1 + x + 4));
 
+                // //返回一个__m128的寄存器，r0=(flaot)_A0, r1=(float)_A1, r2=(float)_A2, r3=(float)_A3
+	            // extern __m128 _mm_cvtepi32_ps(__m128i _A);
+                //? 两个 四个数 的数组 对应位置相乘
+                // _mm_mul_ps
                 s0 = _mm_mul_ps(_mm_cvtepi32_ps(x0), b0);
                 s1 = _mm_mul_ps(_mm_cvtepi32_ps(x1), b0);
                 f0 = _mm_mul_ps(_mm_cvtepi32_ps(y0), b1);
                 f1 = _mm_mul_ps(_mm_cvtepi32_ps(y1), b1);
+
+                //? 两个 四个数 的数组 对应位置相加
+                // _mm_add_ps
                 s0 = _mm_add_ps(s0, f0);
                 s1 = _mm_add_ps(s1, f1);
 
@@ -1279,6 +1314,8 @@ struct VResizeCubicVec_32s8u
 
                 f0 = _mm_mul_ps(_mm_cvtepi32_ps(x0), b2);
                 f1 = _mm_mul_ps(_mm_cvtepi32_ps(x1), b2);
+
+
                 s0 = _mm_add_ps(s0, f0);
                 s1 = _mm_add_ps(s1, f1);
                 f0 = _mm_mul_ps(_mm_cvtepi32_ps(y0), b3);
@@ -1286,31 +1323,36 @@ struct VResizeCubicVec_32s8u
                 s0 = _mm_add_ps(s0, f0);
                 s1 = _mm_add_ps(s1, f1);
 
+                // 返回一个__m128i的寄存器，r0=(int)_A0, r1=(int)_A1, r2=(int)_A2, r3=(int)_A3
+	            // extern __m128i _mm_cvtps_epi32(__m128 _A);
                 x0 = _mm_cvtps_epi32(s0);
                 x1 = _mm_cvtps_epi32(s1);
 
+                // 返回一个__m128i的寄存器，r0=SignedSaturate(_A0), r1=SignedSaturate(_A1), 
+                // r2=SignedSaturate(_A2),r3=SignedSaturate(_A3), r4=SignedSaturate(_B0), 
+                // r5=SignedSaturate(_B1), r6=SignedSaturate(_B2), r7=SignedSaturate(_B3),  saturate
+                // extern __m128i _mm_packs_epi32(__m128i _A, __m128i _B);
                 x0 = _mm_packs_epi32(x0, x1);
 
                 
                 uint16_t *val = (uint16_t*) &x0;
-                printf("Numerical: %i %i %i %i %i %i %i %i \n", //////////////////////////////////////////////////  get out 8 个结果
-                    val[0], val[1], val[2], val[3], val[4], val[5], 
-                    val[6], val[7]);
+                // printf("Numerical: %i %i %i %i %i %i %i %i \n", //////////////////////////////////////////////////  getout 8 个结果
+                //     val[0], val[1], val[2], val[3], val[4], val[5], 
+                //     val[6], val[7]);
 
-                int32_t  *q = (int32_t*)&x0 ;/////////////
-                std::cout<<q[0]<<std::endl;/////////////////
+                // int32_t  *q = (int32_t*)&x0 ;/////////////
+               
                 
                 _mm_storel_epi64( (__m128i*)(dst + x), _mm_packus_epi16(x0, x0));
 
 
-                int32_t  *p = (int*)((__m128i*)(dst + x)) ;/////////////
-                std::cout<<p[0]<<std::endl;/////////////////
-                std::cout<<"x0....."<<x<<std::endl;/////////////////////////////////////////////////////////////////////
+                // int32_t  *p = (int*)((__m128i*)(dst + x)) ;/////////////
+   
+   
             }
             
         }
         else{
-            std::cout<<"else......"<<std::endl;///////////////////////////////////////////
             for( ; x <= width - 8; x += 8 )
             {
                 __m128i x0, x1, y0, y1;
@@ -1346,13 +1388,10 @@ struct VResizeCubicVec_32s8u
 
                 x0 = _mm_packs_epi32(x0, x1);
 
-                // std::cout<<"x0....."<<int(x0)<<std::endl;/////////////////////////////////////////////////////////////////////
                 _mm_storel_epi64( (__m128i*)(dst + x), _mm_packus_epi16(x0, x0));
 
-                std::cout<<"x0....."<<*(long long *)((__m128i*)(dst + x))<<std::endl;/////////////////////////////////////////////////////////////////////
             }
         }
-        std::cout<<"x....."<<x<<std::endl;///////////////////////////////////////////////////////////
         return x;
     }
 };
@@ -1362,7 +1401,6 @@ template<int shiftval> struct VResizeCubicVec_32f16
 {
     int operator()(const uchar** _src, uchar* _dst, const uchar* _beta, int width ) const
     {
-        // std::cout<<"VResizeCubicVec_32f16..."<<std::endl;
         if( !checkHardwareSupport(CV_CPU_SSE2) )
             return 0;
 
@@ -1424,7 +1462,6 @@ struct VResizeCubicVec_32f
 {
     int operator()(const uchar** _src, uchar* _dst, const uchar* _beta, int width ) const
     {
-        // std::cout<<"VResizeCubicVec_32f..."<<std::endl;
         if( !checkHardwareSupport(CV_CPU_SSE) )
             return 0;
 
@@ -1700,7 +1737,6 @@ struct VResizeCubicVec_32f16u
 {
     int operator()(const uchar** _src, uchar* _dst, const uchar* _beta, int width ) const
     {
-        // std::cout<<"VResizeCubicVec_32f16u..."<<std::endl;
         const float** src = (const float**)_src;
         const float* beta = (const float*)_beta;
         const float *S0 = src[0], *S1 = src[1], *S2 = src[2], *S3 = src[3];
@@ -1732,7 +1768,6 @@ struct VResizeCubicVec_32f16s
 {
     int operator()(const uchar** _src, uchar* _dst, const uchar* _beta, int width ) const
     {
-        // std::cout<<"VResizeCubicVec_32f16s..."<<std::endl;
         const float** src = (const float**)_src;
         const float* beta = (const float*)_beta;
         const float *S0 = src[0], *S1 = src[1], *S2 = src[2], *S3 = src[3];
@@ -1764,7 +1799,6 @@ struct VResizeCubicVec_32f
 {
     int operator()(const uchar** _src, uchar* _dst, const uchar* _beta, int width ) const
     {
-        // std::cout<<"VResizeCubicVec_32f..."<<std::endl;
         const float** src = (const float**)_src;
         const float* beta = (const float*)_beta;
         const float *S0 = src[0], *S1 = src[1], *S2 = src[2], *S3 = src[3];
@@ -2050,7 +2084,8 @@ struct VResizeLinear<uchar, int, short, FixedPtCast<int, uchar, INTER_RESIZE_COE
     }
 };
 
-//////////////////////////////////////////////////////  HResizeCubic  VResizeCubic  ////////////////////////////////////// zjin5
+//////////////////////////////////////////////////////  HResizeCubic  VResizeCubic  ////////////////////////////////////// zjin6
+// hresize( (const T**)(srows + k0), (WT**)(rows + k0), ksize - k0, xofs, (const AT*)(alpha),ssize.width, dsize.width, cn, xmin, xmax );
 // HResizeCubic<uchar, int, short>,///////////     HResizeCubic
 template<typename T, typename WT, typename AT>
 struct HResizeCubic
@@ -2059,19 +2094,22 @@ struct HResizeCubic
     typedef WT buf_type;
     typedef AT alpha_type;
 
+// 115,116,117,118  118,119,120,120 -- 这样count=3 count为这次4个数与上次不重合的部分
     void operator()(const T** src, WT** dst, int count,
                     const int* xofs, const AT* alpha,
                     int swidth, int dwidth, int cn, int xmin, int xmax ) const
-    {
-        std::cout<<"HResizeCubic**************************************"<<std::endl;////////////////////////////////////////////50 ge
-        for( int k = 0; k < count; k++ )
+    {///////////////////////////////////////////50 ge
+
+        // std::cout<<count<<" count"<<std::endl;//4  3  2  2  3  ...
+
+        for( int k = 0; k < count; k++ )///////////////// 计算ksize - k0 行值 ------ 以备VResize用【s0-s3】
         {
             const T *S = src[k];
             WT *D = dst[k];
             int dx = 0, limit = xmin;
             for(;;)
             {
-                for( ; dx < limit; dx++, alpha += 4 )
+                for( ; dx < limit; dx++, alpha += 4 )/////////////////////////  dst  dst[0] dst[49] 计算 ？？？
                 {
                     int j, sx = xofs[dx] - cn;
                     WT v = 0;
@@ -2088,16 +2126,20 @@ struct HResizeCubic
                         v += S[sxj]*alpha[j];
                     }
                     D[dx] = v;
-                    // std::cout<<"dst[k]:"<<*dst[k]<<std::endl;/////////////////////////////////////////////////////
                 }
                 if( limit == dwidth )
                     break;
-                for( ; dx < xmax; dx++, alpha += 4 )
+                for( ; dx < xmax; dx++, alpha += 4 )////////////////////////////// dst 第dst[1]-dst[48]个值计算 ？？？？？？？？？？？
                 {
+                    // cn:1
+                    //xofs[dx] : 3 6 9 11 ...  131 ///原始图片宽度为136-----------
+                    // dx: 1 2 3 ... 48
+                    // alpha: -138 887 1523 -224   -227 1616 777 -117   ...
+                    // std::cout<<"cn:"<<cn<<" dx:"<< dx <<" xofs[dx]:"<<xofs[dx]<<" alpha:"<<alpha[0]<<" "<<alpha[1]<<" "<<alpha[2]<<" "<<alpha[3]<<std::endl;
                     int sx = xofs[dx];
                     D[dx] = S[sx-cn]*alpha[0] + S[sx]*alpha[1] +
-                        S[sx+cn]*alpha[2] + S[sx+cn*2]*alpha[3];
-                    // std::cout<<"D[dx]:"<<D[dx]<<std::endl;////////////////////////////////////////////
+                        S[sx+cn]*alpha[2] + S[sx+cn*2]*alpha[3];/////////////////////////////////////////////////// /"????"行计算
+                    // std::cout<<"S["<<sx-cn<<"]:"<<S[sx-cn]<<" D[dx]:"<<D[dx]<<" *******************************"<<std::endl;///////////////////////////////////////////////////////////////////////////////////////////////////////////////
                 }
                 limit = dwidth;
             }
@@ -2108,7 +2150,8 @@ struct HResizeCubic
 
 
 // VResizeCubic<uchar, int, short,  FixedPtCast <int, uchar, INTER_RESIZE_COEF_BITS*2>,  VResizeCubicVec_32s8u> >
-template<typename T, typename WT, typename AT, class CastOp, class VecOp>
+// vresize( (const WT**)rows, (T*)(dst.data + dst.step*dy), beta, dsize.width );
+template<typename T, typename WT, typename AT, class CastOp, class VecOp>//////////////////////////////////////////////////////////////
 struct VResizeCubic
 {
     typedef T value_type;
@@ -2118,23 +2161,21 @@ struct VResizeCubic
     void operator()(const WT** src, T* dst, const AT* beta, int width ) const
     {
         WT b0 = beta[0], b1 = beta[1], b2 = beta[2], b3 = beta[3];
+        // std::cout<<" b0:"<<b0 <<" b1:"<<b1 <<" b2:"<<b2 <<" b3:"<<b3 <<std::endl;/////////  b0:-23 b1:246 b2:1976 b3:-151  b0:-225 b1:1723 b2:641 b3:-92  与获取参数中beat对应
+
+
         const WT *S0 = src[0], *S1 = src[1], *S2 = src[2], *S3 = src[3];
         CastOp castOp;
         VecOp vecOp;
 
-        int x = vecOp((const uchar**)src, (uchar*)dst, (const uchar*)beta, width);
-        std::cout<<"x:"<<x<<std::endl;///////////////////////////////////////////////////////// 48
-        for( ; x < width; x++ )
-            dst[x] = castOp(S0[x]*b0 + S1[x]*b1 + S2[x]*b2 + S3[x]*b3);
-            // std::cout<<x<<std::endl;//////////////////////////////////////////////////////////////////////////////
-            // std::cout<<"dst[x]:"<<dst[x]<<std::endl;
+        int x = vecOp((const uchar**)src, (uchar*)dst, (const uchar*)beta, width);//////////////////////////////// 获取dst前 48 个值
+        /////////////// x=48
+        for( ; x < width; x++ ){
+            // std::cout<<S0[x]*b0 + S1[x]*b1 + S2[x]*b2 + S3[x]*b3<<" castp"<<std::endl;
+            dst[x] = castOp(S0[x]*b0 + S1[x]*b1 + S2[x]*b2 + S3[x]*b3); ////////////////////////////// 获取dst 后 2 个值
+            
 
-    
-        std::cout<<"VResizeCubic--------------------------------------------"<<std::endl;//////////////////////////////////////////50 ge zjin
-        // x = vecOp((const uchar**)src, (uchar*)dst, (const uchar*)beta, width);
-        // for( ; x < width; x++ )
-        //     std::cout<<x<<std::endl;
-        //     std::cout<<dst[x]<<std::endl;
+        }
     }
 };
 
@@ -2247,9 +2288,9 @@ class resizeGeneric_Invoker :
     public ParallelLoopBody
 {
 public:
-    typedef typename HResize::value_type T;
-    typedef typename HResize::buf_type WT;
-    typedef typename HResize::alpha_type AT;
+    typedef typename HResize::value_type T;////////////////// T - uchar
+    typedef typename HResize::buf_type WT; ////////////////  int
+    typedef typename HResize::alpha_type AT; //////////////// , short
 
     resizeGeneric_Invoker(const Mat& _src, Mat &_dst, const int *_xofs, const int *_yofs,////////////////////////////////////////  zjin5
         const AT* _alpha, const AT* __beta, const Size& _ssize, const Size &_dsize,
@@ -2263,45 +2304,77 @@ public:
 
     virtual void operator() (const Range& range) const CV_OVERRIDE
     {
-        int dy, cn = src.channels();
+        //查看src的结果
+
+        int dy, cn = src.channels();//cn 通道数
         HResize hresize;
         VResize vresize;
 
-        int bufstep = (int)alignSize(dsize.width, 16);
-        AutoBuffer<WT> _buffer(bufstep*ksize);
+//dsize.width = 50
+        int bufstep = (int)alignSize(dsize.width, 16);//(sz + n-1) & -n
+        // bufstep=((dsize.width + 16-1) & -16)=64
+
+        AutoBuffer<WT> _buffer(bufstep*ksize);/////////  bufstep*ksize = 256
+
+
         const T* srows[MAX_ESIZE]={0};
+
         WT* rows[MAX_ESIZE]={0};
+        ///  0 rows[0]
+
+
+
+        // float* rows[MAX_ESIZE]={0};//zjin
+
         int prev_sy[MAX_ESIZE];
 
         for(int k = 0; k < ksize; k++ )
         {
             prev_sy[k] = -1;
-            rows[k] = (WT*)_buffer + bufstep*k;
+            rows[k] = (WT*)_buffer + bufstep*k;//bufstep=64  每次走64位 走4次
+
+            // uchar *val = (uchar*) rows[k];
+            // printf("Numerical: %i %i %i %i %i %i %i %i \n", ///////////////
+            // val[0], val[1], val[2], val[3], val[4], val[5], 
+            // val[6], val[7]);
+
+            // std::cout<<rows[k] <<" rows[k]"<<std::endl;//////////////////////////--- 0x7ffc74add200 ??储存地址4个
         }
 
         const AT* beta = _beta + ksize * range.start;
 
-        for( dy = range.start; dy < range.end; dy++, beta += ksize )
+        // range.start<<" "<<range.end////////////////// 0 50
+
+        //?? 一个for拿到一行数据
+        for( dy = range.start; dy < range.end; dy++, beta += ksize )///////////////////////////////////////////////////////??? beta += ksize 50个  每次走4个字节到下一个数据？？？
         {
             int sy0 = yofs[dy], k0=ksize, k1=0, ksize2 = ksize/2;
 
-            for(int k = 0; k < ksize; k++ )
+            for(int k = 0; k < ksize; k++ )// ////////// ? (ksize=4) -- 4行 一行一行走
             {
-                int sy = clip(sy0 - ksize2 + 1 + k, 0, ssize.height);
+                int sy = clip(sy0 - ksize2 + 1 + k, 0, ssize.height);//sy： 0,0,1,2  2,3,4,5  4,5,6,7  6,7,8,9 ...  115,116,117,118  118,119,120,120 循环 原图片高121 分为50个4份
+                
+
                 for( k1 = std::max(k1, k); k1 < ksize; k1++ )
                 {
                     if( k1 < MAX_ESIZE && sy == prev_sy[k1] ) // if the sy-th row has been computed already, reuse it.
                     {
-                        if( k1 > k )
-                            memcpy( rows[k], rows[k1], bufstep*sizeof(rows[0][0]) );
-                            // std::cout<< *rows[k1]<<std::endl;////////////////////////////////////////////////////
+                        if( k1 > k ){
+                            //void *memcpy(void *dest, const void *src, size_t n);
+                            memcpy( rows[k], rows[k1], bufstep*sizeof(rows[0][0]) );//bufstep=64
+
+                            // std::cout<< rows[0][0] << " " << rows[0][1] <<std::endl;//////////////////////////rows[0][0] 对应VResizeCubicVec_32s8u 中 S0
+                        }
                         break;
                     }
                 }
+
+
                 if( k1 == ksize )
                     k0 = std::min(k0, k); // remember the first row that needs to be computed
+                
                 srows[k] = src.template ptr<T>(sy);
-                prev_sy[k] = sy;
+                prev_sy[k] = sy;/////////////////////////////////////////////////////////////////////////////////////
             }
 
             if( k0 < ksize )
@@ -2330,7 +2403,6 @@ static void resizeGeneric_( const Mat& src, Mat& dst,//////////////// //src, dst
                             const int* yofs, const void* _beta,
                             int xmin, int xmax, int ksize )
 {
-    // std::cout<<"resizeGeneric_"<<std::endl;////////////////////////////////////////////
     typedef typename HResize::alpha_type AT;
 
     const AT* beta = (const AT*)_beta;
@@ -2345,8 +2417,8 @@ static void resizeGeneric_( const Mat& src, Mat& dst,//////////////// //src, dst
     Range range(0, dsize.height);
     resizeGeneric_Invoker<HResize, VResize> invoker(src, dst, xofs, yofs, (const AT*)_alpha, beta,//////////////////////   **************************
         ssize, dsize, ksize, xmin, xmax);
-    // std::cout<<"resizeGeneric_Invoker"<<std::endl;//////////////////////////////////////////////////////////////////////
-    // std::cout<<dst<<std::endl;/////////////////////////////////// [0,0,0 ... ]
+
+    //  dst.total()<<" "<<(double)(1<<16)<<"---"<<std::endl;/// 2500 65536
     parallel_for_(range, invoker, dst.total()/(double)(1<<16));
     // std::cout<<dst<<std::endl;////////////////////////////////////////////////////// !!!!!!!!!!!!!!!  ///////////////                !!!!! it's out
 }
@@ -3793,24 +3865,25 @@ void resize(int src_type,
                 FixedPtCast<int, uchar, INTER_RESIZE_COEF_BITS*2>,/////      FixedPtCast
                 VResizeCubicVec_32s8u> >,//////////     VResizeCubicVec_32s8u
         0,
-        resizeGeneric_<
-            HResizeCubic<ushort, float, float>,
-            VResizeCubic<ushort, float, float, Cast<float, ushort>,
-            VResizeCubicVec_32f16u> >,
-        resizeGeneric_<
-            HResizeCubic<short, float, float>,
-            VResizeCubic<short, float, float, Cast<float, short>,
-            VResizeCubicVec_32f16s> >,
-        0,
-        resizeGeneric_<
-            HResizeCubic<float, float, float>,
-            VResizeCubic<float, float, float, Cast<float, float>,
-            VResizeCubicVec_32f> >,
-        resizeGeneric_<
-            HResizeCubic<double, double, float>,
-            VResizeCubic<double, double, float, Cast<double, double>,
-            VResizeNoVec> >,
-        0
+        //zjin 注释
+        // resizeGeneric_<
+        //     HResizeCubic<ushort, float, float>,
+        //     VResizeCubic<ushort, float, float, Cast<float, ushort>,
+        //     VResizeCubicVec_32f16u> >,
+        // resizeGeneric_<
+        //     HResizeCubic<short, float, float>,
+        //     VResizeCubic<short, float, float, Cast<float, short>,
+        //     VResizeCubicVec_32f16s> >,
+        // 0,
+        // resizeGeneric_<
+        //     HResizeCubic<float, float, float>,
+        //     VResizeCubic<float, float, float, Cast<float, float>,
+        //     VResizeCubicVec_32f> >,
+        // resizeGeneric_<
+        //     HResizeCubic<double, double, float>,
+        //     VResizeCubic<double, double, float, Cast<double, double>,
+        //     VResizeNoVec> >,
+        // 0
     };
 
     static ResizeFunc lanczos4_tab[] =
@@ -3973,7 +4046,7 @@ void resize(int src_type,
     ResizeFunc func=0;
     int ksize=0, ksize2;
     if( interpolation == INTER_CUBIC ){
-        // std::cout<<"depth:"<<depth<<std::endl;////////////////////// depth = 0
+        ///////////// depth = 0
         ksize = 4, func = cubic_tab[depth];///////////////////////////////////////////////////////////////////////// func定义  zjin2
     }
     else if( interpolation == INTER_LANCZOS4 )
@@ -3994,16 +4067,6 @@ void resize(int src_type,
     float* beta = alpha + width*ksize;
     short* ibeta = ialpha + width*ksize;
     float cbuf[MAX_ESIZE] = {0};
-
-
-    ///////////////////////////////////////////////////////////////////////////////zjin
-    // std::cout << "zjin---------------------" << std::endl;
-    // void resize(int src_type,
-    //         const uchar * src_data, size_t src_step, int src_width, int src_height,
-    //         uchar * dst_data, size_t dst_step, int dst_width, int dst_height,
-    //         double inv_scale_x, double inv_scale_y, int interpolation)
-    // std::cout << src << std::endl;
-
 
 
 
@@ -4037,8 +4100,7 @@ void resize(int src_type,
         }
 
         for( k = 0, sx *= cn; k < cn; k++ )
-            xofs[dx*cn + k] = sx + k;
-            // std::cout<<"xofs:"<<xofs[dx*cn + k]<<std::endl;///////////////////////////////////50 个
+            xofs[dx*cn + k] = sx + k; //////////50 个
 
         if( interpolation == INTER_CUBIC )////////////////////////////////////////
             interpolateCubic( fx, cbuf );
@@ -4053,10 +4115,10 @@ void resize(int src_type,
         {
             for( k = 0; k < ksize; k++ )
                 ialpha[dx*cn*ksize + k] = saturate_cast<short>(cbuf[k]*INTER_RESIZE_COEF_SCALE);
-                // std::cout<<"ialpha:"<<ialpha[dx*cn*ksize + k] << std::endl;////////////////////////////////////////////////50 个
+                // "ialpha:"<<ialpha[dx*cn*ksize + k] << std::endl;////////////////////////////////////////////////50 个
             for( ; k < cn*ksize; k++ )
                 ialpha[dx*cn*ksize + k] = ialpha[dx*cn*ksize + k - ksize];////////////////////////////////////////////////50 个
-                // std::cout<<"ialpha:"<<ialpha[dx*cn*ksize + k] << std::endl;
+                // "ialpha:"<<ialpha[dx*cn*ksize + k] << std::endl;
         }
         else
         {
@@ -4083,7 +4145,7 @@ void resize(int src_type,
         }
 
         yofs[dy] = sy;
-        // std::cout<<"yofs:"<<yofs[dy]<<std::endl;/////////////////////////////////////////////50个
+        // "yofs:"<<yofs[dy]<<std::endl;/////////////////////////////////////////////50个
         if( interpolation == INTER_CUBIC )
             interpolateCubic( fy, cbuf );
         else if( interpolation == INTER_LANCZOS4 )
@@ -4098,7 +4160,7 @@ void resize(int src_type,
         {
             for( k = 0; k < ksize; k++ )
                 ibeta[dy*ksize + k] = saturate_cast<short>(cbuf[k]*INTER_RESIZE_COEF_SCALE);
-                // std::cout<< "ibeta:" << ibeta[dy*ksize + k] << std::endl;////////////////////////////////////////////////50个
+                // "ibeta:" << ibeta[dy*ksize + k] << std::endl;////////////////////////////////////////////////50个
         }
         else
         {
@@ -4108,24 +4170,13 @@ void resize(int src_type,
     }
 
 ///////////////////////////////////// dst [0,0,0,...0]//////////////////// ksize = 4, func = cubic_tab[depth];  
-    // std::cout<<fixpt<<std::endl; ///////////////////   1
-    
-    // std::cout<<"------------------------------------------------"<<std::endl;
-    // std::cout<<*xofs<<std::endl;//0
-    
-
-
-    // std::cout<<*yofs<<std::endl;//0
-
-    // std::cout<<fixpt ? (void*)ibeta : (void*)beta<<std::endl;
-
-    // std::cout<< xmin <<" "<< xmax << " "<< ksize <<std::endl;// 1  49  4
+    //  xmin <<" "<< xmax << " "<< ksize <<std::endl;// 1  49  4
 
     func( src, dst, xofs, fixpt ? (void*)ialpha : (void*)alpha, yofs,//////////////////////////////////////////////////////////  ///////////------- zjin1   
           fixpt ? (void*)ibeta : (void*)beta, xmin, xmax, ksize );//src, dst, xofs, ialpha, yofs, ibeta, xmin, xmax, ksize
 
     /////////////////////////////////////////////////////////////////////////////zjin
-    // std::cout << dst << std::endl;    //........................it's out
+    // dst << std::endl;    //........................it's out
 }
 
 } // cv::hal::

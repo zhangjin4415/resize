@@ -13,8 +13,8 @@ int main(){
 	// std::cout << matSrc;
 	cv::resize(matSrc, matDst2, matDst1.size(), 0, 0, 2);
 	// std::cout<< "------------------"<< std::endl;
-	// std::cout << matDst2;
-	cv::imwrite("cubic_2.jpg", matDst2);
+	std::cout << matDst2;
+	// cv::imwrite("cubic_2.jpg", matDst2);
 
     // double scale_x = (double)matSrc.cols / matDst1.cols;
     // double scale_y = (double)matSrc.rows / matDst1.rows;
